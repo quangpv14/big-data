@@ -60,9 +60,9 @@ def get_realtime_schema():
         StructField("prevPriceChange", DoubleType(), True)
     ]))
     
-def jobVN30Data(spark):
+def jobStockHistoricalData(spark):
     # Read data from Kafka
-    stock_df = read_kafka_stream(spark, topic_stock_historical, get_vn30_schema())
+    stock_df = read_kafka_stream(spark, "topic_stock_historical", get_vn30_schema())
 
     # Save to HDFS
     hdfs_save_query = stock_df.writeStream \
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"=== Lỗi khi đọc HDFS: {e} ===")
         
-    t1 = threading.Thread(target=jobVN30Data, args=(spark,))
+    t1 = threading.Thread(target=jobStockHistoricalData, args=(spark,))
     t2 = threading.Thread(target=jobStockRealtimeData, args=(spark,))
     t1.start()
     t2.start()
