@@ -1,4 +1,4 @@
-# Big Data Platform - Kafka, Spark, HDFS, Hive, Hue
+# Big Data Platform - Kafka, Spark, HDFS, Elasticsearch, Kibana
 
 ## Description
 
@@ -7,6 +7,8 @@ This project sets up a mini big data platform with:
 - **Kafka**: Real-time data ingestion and streaming.
 - **HDFS**: Distributed storage for big data.
 - **Spark**: Acts as both the batch and speed layer—processing historical data from HDFS and real-time data from Kafka, then writing results back to HDFS.
+- **Elasticsearch**: Indexes processed data from Spark for fast search and analytics.
+- **Kibana**: Visualizes data stored in Elasticsearch with dashboards and charts.
 
 ## Folder Structure
 

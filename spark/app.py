@@ -2,6 +2,9 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, col, split
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
+from save_elasticsearch import write_batch_to_es
+from hdfs_to_es import prepare_stock_df
+import time
 import subprocess
 import logging
 import threading
@@ -37,7 +40,7 @@ def read_kafka_stream(spark, topic, schema, fail_on_data_loss=True):
 
     return stock_df.select(explode(col("data")).alias("stock_data")).select("stock_data.*")
     
-def get_vn30_schema():
+def get_stock_historical_schema():
     return ArrayType(StructType([
         StructField("ticker", StringType(), True),
         StructField("time", StringType(), True),
@@ -62,7 +65,7 @@ def get_realtime_schema():
     
 def jobStockHistoricalData(spark):
     # Read data from Kafka
-    stock_df = read_kafka_stream(spark, "topic_stock_historical", get_vn30_schema())
+    stock_df = read_kafka_stream(spark, "topic_stock_historical", get_stock_historical_schema())
 
     # Save to HDFS
     hdfs_save_query = stock_df.writeStream \
@@ -74,14 +77,46 @@ def jobStockHistoricalData(spark):
       
     hdfs_save_query.awaitTermination()
 
+def jobHdfsToESBatch(spark):
+
+    while True:
+        try:
+            # Read data from HDFS
+            df = spark.read.json(HDFS_OUTPUT_PATH)
+            if df.head(1):
+                print("=== Sample data from HDFS ===")
+                df = prepare_stock_df(df)
+                df.show(20, truncate=False)
+
+                # Save to Elasticsearch
+                write_batch_to_es(df, batch_id=int(time.time()), index_name="stock_historical")
+            else:
+                print("=== No data in HDFS to process ===")
+        except Exception as e:
+            print(f"Error processing HDFS to ES: {e}")
+        
+        # Sleep for a defined interval before next batch processing
+        time.sleep(5)
+        
 def jobStockRealtimeData(spark):
     # Read data from Kafka
     stock_df = read_kafka_stream(spark, "topic_stock_realtime", get_realtime_schema())
     print("Print data realtime stock_df: ")
     
-    query = stock_df.writeStream.outputMode("append").format("console").start()
+    # Console output
+    query_console = stock_df.writeStream.outputMode("append").format("console").start()
 
-    query.awaitTermination()  
+    # push to Elasticsearch
+    query_es = (
+        stock_df.writeStream
+        .foreachBatch(lambda df, batch_id: write_batch_to_es(df, batch_id, "stock_realtime"))
+        .outputMode("append")
+        .start()
+    )
+    
+    # Await termination
+    query_console.awaitTermination()
+    query_es.awaitTermination()  
 
 if __name__ == "__main__":
     # Define SparkSession
@@ -104,9 +139,13 @@ if __name__ == "__main__":
         print(f"=== Lỗi khi đọc HDFS: {e} ===")
         
     t1 = threading.Thread(target=jobStockHistoricalData, args=(spark,))
-    t2 = threading.Thread(target=jobStockRealtimeData, args=(spark,))
+    t2 = threading.Thread(target=jobHdfsToESBatch, args=(spark,))
+    t3 = threading.Thread(target=jobStockRealtimeData, args=(spark,))
     t1.start()
-    t2.start()
+    t3.start()
 
     t1.join()
+    t2.start()
     t2.join()
+    
+    t3.join()

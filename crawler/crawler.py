@@ -90,7 +90,7 @@ def get_stock_data_intraday_realtime(symbol):
     # Process prevPriceChange column
     df['prevPriceChange'] = df['price'].diff().fillna(0)
     df['time'] = df['time'].dt.strftime('%H:%M:%S')
-    #df = df.drop_duplicates(subset=['total_minutes'])
+    df = df.drop_duplicates(subset=['total_minutes'])
     json_data = df.to_json(date_format='iso', orient='records')
     return json_data
 
