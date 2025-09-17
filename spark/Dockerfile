@@ -6,6 +6,7 @@ RUN mkdir /app
 
 # Copy ./app/submit.sh
 COPY ./submit.sh /
+RUN sed -i 's/\r$//' /submit.sh && chmod +x /submit.sh
 
 RUN echo "Build Spark application Docker image!"
 
@@ -17,4 +18,4 @@ WORKDIR /app
 RUN pip3 install -r requirements.txt
 
 # Command to run when the container starts
-CMD ["sh", "/submit.sh"]
+CMD ["bash", "/submit.sh"]

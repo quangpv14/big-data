@@ -23,6 +23,6 @@ def prepare_stock_df(df):
     w_day = Window.partitionBy("date_only").orderBy(desc("daily_pct_change"))
     df = df.withColumn("rank_in_day", rank().over(w_day))
     
-    df = df.repartition("ticker").cache()
+    #df = df.repartition("ticker").cache()
     return df
 

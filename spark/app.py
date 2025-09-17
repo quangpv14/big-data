@@ -4,6 +4,8 @@ from pyspark.sql.functions import from_json, col, explode, date_format, expr, el
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
 from save_elasticsearch import write_batch_to_es
 from hdfs_to_es import prepare_stock_df
+from datetime import datetime, timedelta
+import schedule
 import time
 import subprocess
 import logging
@@ -21,14 +23,13 @@ def ensure_hdfs_path(path):
     except Exception as e:
         print(f"Failed to create HDFS path {path}: {e}")
         
-def read_kafka_stream(spark, topic, schema, fail_on_data_loss=True):
+def read_kafka_stream(spark, topic, schema):
     params = {
         "kafka.bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
         "subscribe": topic,
-        "startingOffsets": "latest"
+        "startingOffsets": "latest",
+        "failOnDataLoss": "false"
     }
-    if fail_on_data_loss:
-        params["failOnDataLoss"] = "false"
         
     kafka_df = spark.readStream.format("kafka").options(**params).load()
     print(f"Print data topic {topic}: ")
@@ -73,30 +74,66 @@ def jobStockHistoricalData(spark):
         .format("json") \
         .option("path", HDFS_OUTPUT_PATH) \
         .option("checkpointLocation", HDFS_CHECKPOINT_PATH) \
+        .trigger(processingTime="1 minute") \
         .start()
       
     hdfs_save_query.awaitTermination()
 
-def jobHdfsToESBatch(spark):
-
-    while True:
-        try:
-            # Read data from HDFS
-            df = spark.read.json(HDFS_OUTPUT_PATH)
-            if df.head(1):
-                print("=== Sample data from HDFS ===")
-                df = prepare_stock_df(df)
-                df.show(20, truncate=False)
-
-                # Save to Elasticsearch
-                write_batch_to_es(df, batch_id=int(time.time()), index_name="stock_historical")
-            else:
-                print("=== No data in HDFS to process ===")
-        except Exception as e:
-            print(f"Error processing HDFS to ES: {e}")
+def process_hdfs_batch(spark):
+    try:
+        # Read data from HDFS
+        df = spark.read.json(HDFS_OUTPUT_PATH)
         
-        # Sleep for a defined interval before next batch processing
-        time.sleep(5)
+        if df.head(1):
+            print("=== Sample data from HDFS ===")
+            
+            # Count record before deduplication
+            print("=== Before: Total data count (dedup):", df.count(), "===")
+            
+            print("=== Record count per ticker (raw) ===")
+            df.groupBy("ticker").count().orderBy("ticker").show(50, truncate=False)
+
+            # Deduplicate
+            clean_df = df.dropDuplicates(["ticker", "time"])
+            
+            # Count records after deduplication
+            print("=== Clean data count (dedup):", clean_df.count(), "===")
+            
+            print("=== Record count per ticker (clean) ===")
+            clean_df.groupBy("ticker").count().orderBy("ticker").show(50, truncate=False)
+                       
+            # Sample data ACB
+            print("=== Sample data ACB ===")
+            clean_df.filter(clean_df['ticker'] == 'ACB').show()
+            
+            clean_df = prepare_stock_df(clean_df)
+            clean_df.show(20, truncate=False)
+
+            # Save to Elasticsearch
+            write_batch_to_es(clean_df, batch_id=int(time.time()), index_name="stock_historical")
+        else:
+            print("=== No data in HDFS to process ===")
+    except Exception as e:
+        print(f"Error processing HDFS to ES: {e}")
+        
+def jobHdfsToESBatch(spark):
+    # Schedule batch job
+    def run_job():
+        print("Running HDFS → ES batch job...")
+        process_hdfs_batch(spark)
+        return schedule.CancelJob
+
+    # Run once after 10 minutes
+    #schedule.every().monday.at("1:00").do(process_hdfs_batch, spark)
+    schedule.every(5).minutes.do(run_job)
+
+    print("Job scheduled to run after 10 minutes...")
+    while True:
+        schedule.run_pending()
+        if not schedule.jobs:
+            print("Job finished, exiting jobHdfsToESBatch thread...")
+            break
+        time.sleep(1)
         
 def jobStockRealtimeData(spark):
     # Read data from Kafka
@@ -105,7 +142,7 @@ def jobStockRealtimeData(spark):
     
     # Console output
     query_console = stock_df.writeStream.outputMode("append").format("console").start()
-
+    
     # push to Elasticsearch
     query_es = (
         stock_df.writeStream
@@ -113,39 +150,39 @@ def jobStockRealtimeData(spark):
         .outputMode("append")
         .start()
     )
-    
     # Await termination
     query_console.awaitTermination()
-    query_es.awaitTermination()  
+    query_es.awaitTermination()
 
+        
 if __name__ == "__main__":
     # Define SparkSession
     spark = SparkSession.builder.appName("KafkaToHDFS").getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-    # Tạo và kiểm tra HDFS folder trước
+    # check HDFS folder exist
     ensure_hdfs_path(HDFS_OUTPUT_PATH)
     ensure_hdfs_path(HDFS_CHECKPOINT_PATH)
 
-    # Thử đọc dữ liệu HDFS nếu có
+    # Test read HDFS
     try:
         df = spark.read.json(HDFS_OUTPUT_PATH)
         if df.head(1):
-            print("=== Dữ liệu đọc từ HDFS ===")
-            df.show(truncate=False)
+            print("=== Data read from HDFS ===")
+            df.show(5, truncate=False)
         else:
-            print("=== HDFS hiện không có dữ liệu ===")
+            print("=== HDFS currently has no data ===")
     except Exception as e:
-        print(f"=== Lỗi khi đọc HDFS: {e} ===")
-        
+        print(f"=== Error reading HDFS: {e} ===")
+
+    # Run 3 jobs concurrently
     t1 = threading.Thread(target=jobStockHistoricalData, args=(spark,))
     t2 = threading.Thread(target=jobHdfsToESBatch, args=(spark,))
     t3 = threading.Thread(target=jobStockRealtimeData, args=(spark,))
     t1.start()
+    t2.start()
     t3.start()
 
     t1.join()
-    t2.start()
     t2.join()
-    
     t3.join()
