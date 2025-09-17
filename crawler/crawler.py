@@ -45,19 +45,24 @@ def delivery_report(err, msg):
     else:
         print('Message delivered successfully: {}'.format(msg.key().decode('utf-8')))
 
-# Function to fetch stock data for a specific symbol
-def get_stock_data_last_week(symbol):
+def get_last_week_range():
     today = datetime.now()
     start_date_this_week = today - timedelta(days=today.weekday())
     start_date_last_week = start_date_this_week - timedelta(days=7)
-    end_date_last_week = start_date_last_week + timedelta(days=5)
-    start_date_last_week_str = start_date_last_week.strftime('%Y-%m-%d')
-    end_date_last_week_str = end_date_last_week.strftime('%Y-%m-%d')
+    end_date_last_week   = start_date_last_week + timedelta(days=5)
+
+    return (
+        start_date_last_week.strftime('%Y-%m-%d'),
+        end_date_last_week.strftime('%Y-%m-%d')
+    )
+
+# Function to fetch stock data for a specific symbol and period(start_date, end_date)
+def get_stock_data_last_week(symbol, start_date, end_date):
 
     # Initialize Quote object
     quote = Quote(symbol=symbol)
     # Fetch historical data for the last week
-    df = quote.history(start_date_last_week_str, end_date_last_week_str, interval='1D')
+    df = quote.history(start_date, end_date, interval='1D')
 
     # convert to JSON
     df["ticker"] = symbol
@@ -96,15 +101,17 @@ def get_stock_data_intraday_realtime(symbol):
 
 def crawl_vn30_historical_job(kafka_topic, bootstrap_servers):
     stock_array = ["ACB","BCM","BID","BVH","CTG","FPT","GAS","GVR","HDB","HPG","MBB","MSN","MWG","PLX","POW","SAB","SHB","SSB","SSI","STB","TCB","TPB","VCB","VHM","VIB","VIC","VJC","VNM","VPB","VRE"]
+    start_date_str, end_date_str = get_last_week_range()
     all_data={}
-     # GEt url of current script
+
+    # Get url of current script
     base_dir = os.path.dirname(os.path.abspath(__file__))  
-    file_path = os.path.join(base_dir, "vn30_historical.json")  
+    file_path = os.path.join(base_dir, "stock_historical.json")  
     
     while True:
         for symbol in stock_array:
             # get data for each stock symbol
-            stock_data = get_stock_data_last_week(symbol)
+            stock_data = get_stock_data_last_week(symbol, start_date_str, end_date_str)
             if stock_data is None:
                 print(f"[INFO] Historical data for {symbol} is not available at the moment. Retrying shortly...")
                 sleep(2)
@@ -124,7 +131,7 @@ def crawl_vn30_historical_job(kafka_topic, bootstrap_servers):
 def crawl_stock_realtime_job(symbol, kafka_topic, bootstrap_servers):
     all_data={}
     base_dir = os.path.dirname(os.path.abspath(__file__))  
-    file_path = os.path.join(base_dir, "realtime_intraday.json")
+    file_path = os.path.join(base_dir, "stock_realtime_data.json")
     while True: 
         stock_data = get_stock_data_intraday_realtime(symbol)
         if stock_data is None:

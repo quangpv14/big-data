@@ -3,7 +3,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, col, split
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
 from save_elasticsearch import write_batch_to_es
-from hdfs_to_es import prepare_stock_df
+from hdfs_to_es import process_stock_df
 from datetime import datetime, timedelta
 import schedule
 import time
@@ -85,32 +85,12 @@ def process_hdfs_batch(spark):
         df = spark.read.json(HDFS_OUTPUT_PATH)
         
         if df.head(1):
-            print("=== Sample data from HDFS ===")
-            
-            # Count record before deduplication
-            print("=== Before: Total data count (dedup):", df.count(), "===")
-            
-            print("=== Record count per ticker (raw) ===")
-            df.groupBy("ticker").count().orderBy("ticker").show(50, truncate=False)
-
-            # Deduplicate
-            clean_df = df.dropDuplicates(["ticker", "time"])
-            
-            # Count records after deduplication
-            print("=== Clean data count (dedup):", clean_df.count(), "===")
-            
-            print("=== Record count per ticker (clean) ===")
-            clean_df.groupBy("ticker").count().orderBy("ticker").show(50, truncate=False)
-                       
-            # Sample data ACB
-            print("=== Sample data ACB ===")
-            clean_df.filter(clean_df['ticker'] == 'ACB').show()
-            
-            clean_df = prepare_stock_df(clean_df)
-            clean_df.show(20, truncate=False)
+            # Process data
+            stock_df = process_stock_df(df)
+            stock_df.show(20, truncate=False)
 
             # Save to Elasticsearch
-            write_batch_to_es(clean_df, batch_id=int(time.time()), index_name="stock_historical")
+            write_batch_to_es(stock_df, batch_id=int(time.time()), index_name="stock_historical")
         else:
             print("=== No data in HDFS to process ===")
     except Exception as e:
@@ -123,11 +103,11 @@ def jobHdfsToESBatch(spark):
         process_hdfs_batch(spark)
         return schedule.CancelJob
 
-    # Run once after 10 minutes
+    # Run once after 5 minutes
     #schedule.every().monday.at("1:00").do(process_hdfs_batch, spark)
     schedule.every(5).minutes.do(run_job)
 
-    print("Job scheduled to run after 10 minutes...")
+    print("Job scheduled to run after 5 minutes...")
     while True:
         schedule.run_pending()
         if not schedule.jobs:
