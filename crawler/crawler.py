@@ -149,8 +149,11 @@ def crawl_stock_realtime_job(symbol, kafka_topic, bootstrap_servers):
             json.dump(all_data, f, ensure_ascii=False, indent=4)
         sleep(60)
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
+    #  Thread for batch job of VN30 historical data
     t1 = threading.Thread(target=crawl_vn30_historical_job, args=(KAFKA_TOPIC_HISTORICAL, BOOTSTRAP_SERVERS))
+    
+    # Thread for realtime data of ACB stock
     t2 = threading.Thread(target=crawl_stock_realtime_job, args=('ACB', KAFKA_TOPIC_REALTIME, BOOTSTRAP_SERVERS))
 
     t1.start()

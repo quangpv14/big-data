@@ -45,14 +45,14 @@ big-data/
 
 ## Useful Commands
 
-- **Check HDFS data:**
+- **Check HDFS data - execute inside the `namenode` container**
   ```sh
-  docker-compose exec namenode hdfs dfs -ls /user/root/kafka_data
+  hdfs dfs -ls /user/root/kafka_data
   ```
 
-- **Read Kafka topic data:**
+- **Read Kafka topic data - execute inside the `Kafka` container**
   ```sh
-  docker-compose exec kafka kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning
+  kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning
   ```
 
 ## Notes
