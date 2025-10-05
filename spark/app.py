@@ -1,6 +1,6 @@
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, col, split
+from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, split, from_utc_timestamp, concat_ws
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
 from save_elasticsearch import write_batch_to_es
 from hdfs_to_es import process_stock_df
@@ -36,10 +36,11 @@ def read_kafka_stream(spark, topic, schema):
     kafka_df.printSchema()
     
     # Parse JSON => array<struct>
-    kafka_str_df = kafka_df.selectExpr("CAST(value AS STRING)")
-    stock_df = kafka_str_df.select(from_json(col("value"), schema).alias("data"))
+    kafka_str_df = kafka_df.selectExpr("CAST(value AS STRING)", "timestamp AS kafka_ts")
+    stock_df = kafka_str_df.select(from_json(col("value"), schema).alias("data"), col("kafka_ts"))
+    exploded = stock_df.select(explode(col("data")).alias("stock_data"), col("kafka_ts"))
 
-    return stock_df.select(explode(col("data")).alias("stock_data")).select("stock_data.*")
+    return exploded.select("stock_data.*", "kafka_ts")
     
 def get_stock_historical_schema():
     return ArrayType(StructType([
@@ -119,13 +120,29 @@ def jobStockRealtimeData(spark):
     # Read data from Kafka
     stock_df = read_kafka_stream(spark, "topic_stock_realtime", get_realtime_schema())
     print("Print data realtime stock_df: ")
+
+    df_local_ts = stock_df.withColumn(
+        "kafka_ts_local",
+        from_utc_timestamp(col("kafka_ts"), "Asia/Ho_Chi_Minh")
+    )
+
+    df_with_ts = df_local_ts.withColumn(
+        "@timestamp",
+        to_timestamp(
+            concat_ws(" ",
+            date_format(col("kafka_ts_local"), "yyyy-MM-dd"),
+            col("time")
+            ),
+            "yyyy-MM-dd HH:mm:ss"
+        )
+    ).drop("kafka_ts_local")
     
     # Console output
-    query_console = stock_df.writeStream.outputMode("append").format("console").start()
+    query_console = df_with_ts.writeStream.outputMode("append").format("console").start()
     
     # push to Elasticsearch
     query_es = (
-        stock_df.writeStream
+        df_with_ts.writeStream
         .foreachBatch(lambda df, batch_id: write_batch_to_es(df, batch_id, "stock_realtime"))
         .outputMode("append")
         .start()

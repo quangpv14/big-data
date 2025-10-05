@@ -3,8 +3,8 @@ import json
 
 # Kết nối tới Elastic Cloud 9.x
 es = Elasticsearch(
-    "https://f7fedd4c7b1a415088149be42a425104.us-central1.gcp.cloud.es.io:443",
-    basic_auth=("elastic", "ndYyNWgRX2fi2J1Vv7D8Lljq"),
+    "https://4f43af4255e248d6af5e17f3671056a7.us-central1.gcp.cloud.es.io:443",
+    basic_auth=("elastic", "ZTban9LzQv9JFoLnrGE9Yo7R"),
     verify_certs=True
 )
 
