@@ -1,6 +1,6 @@
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, split, from_utc_timestamp, concat_ws
+from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, to_utc_timestamp, split, from_utc_timestamp, concat_ws
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
 from save_elasticsearch import write_batch_to_es
 from hdfs_to_es import process_stock_df
@@ -126,16 +126,21 @@ def jobStockRealtimeData(spark):
         from_utc_timestamp(col("kafka_ts"), "Asia/Ho_Chi_Minh")
     )
 
-    df_with_ts = df_local_ts.withColumn(
-        "@timestamp",
-        to_timestamp(
-            concat_ws(" ",
-            date_format(col("kafka_ts_local"), "yyyy-MM-dd"),
-            col("time")
-            ),
-            "yyyy-MM-dd HH:mm:ss"
+    df_local = df_local_ts.withColumn(
+    "local_ts",
+    to_timestamp(
+        concat_ws(" ",
+                  date_format(col("kafka_ts_local"), "yyyy-MM-dd"),
+                  col("time")
+        ),
+        "yyyy-MM-dd HH:mm:ss"
         )
-    ).drop("kafka_ts_local")
+    )
+
+    df_with_ts = df_local.withColumn(
+        "@timestamp",
+        to_utc_timestamp(col("local_ts"), "Asia/Ho_Chi_Minh")
+    ).drop("kafka_ts_local", "local_ts")
     
     # Console output
     query_console = df_with_ts.writeStream.outputMode("append").format("console").start()

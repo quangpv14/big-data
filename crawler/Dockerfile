@@ -1,5 +1,8 @@
 # Sử dụng image Python cơ bản
-FROM python:latest
+FROM python:3.11-slim
+
+# Cập nhật pip
+RUN python -m pip install --upgrade pip
 
 # Cài đặt các package cần thiết
 RUN pip install requests
