@@ -2,7 +2,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, explode, date_format, expr, element_at, to_timestamp, to_utc_timestamp, split, from_utc_timestamp, concat_ws
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType, ArrayType, TimestampType, DoubleType, DateType, MapType
-from save_elasticsearch import write_batch_to_es
+from save_elasticsearch import write_batch_to_es, is_trading_time
 from hdfs_to_es import process_stock_df
 from datetime import datetime, timedelta
 import schedule
@@ -66,6 +66,13 @@ def get_realtime_schema():
     ]))
     
 def jobStockHistoricalData(spark):
+    print("\n⏳ Checking Vietnam trading hours…")
+    while not is_trading_time():
+        print("⏸ Currently outside trading hours, will check again in 60 seconds...")
+        time.sleep(60)
+
+    print("\n✅ Within trading hours – starting to read realtime data...")
+    
     # Read data from Kafka
     stock_df = read_kafka_stream(spark, "topic_stock_historical", get_stock_historical_schema())
 
