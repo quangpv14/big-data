@@ -66,13 +66,6 @@ def get_realtime_schema():
     ]))
     
 def jobStockHistoricalData(spark):
-    print("\n⏳ Checking Vietnam trading hours…")
-    while not is_trading_time():
-        print("⏸ Currently outside trading hours, will check again in 60 seconds...")
-        time.sleep(60)
-
-    print("\n✅ Within trading hours – starting to read realtime data...")
-    
     # Read data from Kafka
     stock_df = read_kafka_stream(spark, "topic_stock_historical", get_stock_historical_schema())
 
@@ -124,6 +117,13 @@ def jobHdfsToESBatch(spark):
         time.sleep(1)
         
 def jobStockRealtimeData(spark):
+    print("\n⏳ Checking Vietnam trading hours…")
+    while not is_trading_time():
+        print("⏸ Currently outside trading hours, will check again in 60 seconds...")
+        time.sleep(60)
+
+    print("\n✅ Within trading hours – starting to read realtime data...")
+    
     # Read data from Kafka
     stock_df = read_kafka_stream(spark, "topic_stock_realtime", get_realtime_schema())
     print("Print data realtime stock_df: ")
